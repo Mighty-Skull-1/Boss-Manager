@@ -52,11 +52,25 @@ const RUNNER_CHATTER = [
   'Corner clip setup in 3... 2...',
   'My i-frames felt late there lag??',
   'DPS CHECK DPS CHECK!!',
-  'LMAO this boss AI is so predictable',
+  'WHO GAVE THE BOSS WASD MOVEMENT?!',
+  'HE IS SPRINTING DIRECTLY AT ME BRO!!',
+  'KITE HIM AROUND THE PILLARS!!',
+  'HE ROAMS LIKE AN ACTUAL PLAYER WTF?!',
   'Don’t let him monologue!',
   'Pop cooldowns!! SKIP TIME!!',
   'Wait who patched the collision?!',
 ];
+
+export function updateBossPosition(state: GameSimulationState, x: number, y: number): GameSimulationState {
+  return {
+    ...state,
+    boss: {
+      ...state.boss,
+      x: Math.max(120, Math.min(680, x)),
+      y: Math.max(100, Math.min(500, y)),
+    },
+  };
+}
 
 const TWITCH_CHATTERS = [
   { user: 'SpeedyMcRoll', text: 'POG HE DID THE CLIP', color: '#38bdf8' },

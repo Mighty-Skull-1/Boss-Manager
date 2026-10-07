@@ -7,7 +7,8 @@ import {
   deployArenaTrap, 
   resolveHotpatch, 
   triggerPhase2Transition, 
-  finishPhase2Cutscene 
+  finishPhase2Cutscene,
+  updateBossPosition 
 } from './game/simulationEngine';
 import { ENCOUNTERS } from './game/encounters';
 import type { BossAttack } from './types/game';
@@ -255,6 +256,10 @@ export function App() {
                 simulationState={simulationState}
                 onCanvasClick={handleCanvasClick}
                 selectedTrap={selectedTrap}
+                onQueueAttack={handleQueueAttack}
+                onTriggerPhase2={handleTriggerPhase2}
+                onDeployHotfix={handleDeployHotfix}
+                onUpdateBossPos={(x, y) => setSimulationState(prev => updateBossPosition(prev, x, y))}
               />
             ) : (
               <ArenaCanvas
