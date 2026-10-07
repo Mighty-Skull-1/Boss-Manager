@@ -8,7 +8,9 @@ import {
   resolveHotpatch, 
   triggerPhase2Transition, 
   finishPhase2Cutscene,
-  updateBossPosition 
+  updateBossPosition,
+  performMeleeComboHit,
+  executeVisceralRiposte 
 } from './game/simulationEngine';
 import { ENCOUNTERS } from './game/encounters';
 import type { BossAttack } from './types/game';
@@ -260,6 +262,8 @@ export function App() {
                 onTriggerPhase2={handleTriggerPhase2}
                 onDeployHotfix={handleDeployHotfix}
                 onUpdateBossPos={(x, y) => setSimulationState(prev => updateBossPosition(prev, x, y))}
+                onMeleeComboHit={() => setSimulationState(prev => performMeleeComboHit(prev))}
+                onExecuteRiposte={() => setSimulationState(prev => executeVisceralRiposte(prev))}
               />
             ) : (
               <ArenaCanvas

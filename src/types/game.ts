@@ -12,6 +12,9 @@ export interface Speedrunner {
   vy: number;
   hp: number;
   maxHp: number;
+  posture: number; // Elden Ring Posture / Stagger meter (0 to 100)
+  maxPosture: number;
+  isPostureBroken: boolean;
   dps: number;
   isAlive: boolean;
   isStunned: boolean;
@@ -22,7 +25,7 @@ export interface Speedrunner {
   targetY: number;
   activeExploit: 'none' | 'wall_clip' | 'stagger_loop' | 'buff_stack' | 'dps_skip';
   exploitProgress: number; // 0 to 100
-  buffCount: number; // For potion stacking
+  buffCount: number;
   color: string;
   chatFrequency: number;
   lastChatTime: number;
@@ -34,6 +37,8 @@ export type AttackType =
   | 'magma_pillar' 
   | 'shockwave_jump' 
   | 'summon_imps'
+  | 'visceral_riposte'
+  | 'hotfix_fatality'
   // Phase 2 Exclusive Attacks
   | 'apocalypse_laser' 
   | 'meteor_shower' 
@@ -46,7 +51,7 @@ export interface BossAttack {
   manaCost: number;
   cooldown: number;
   currentCooldown: number;
-  windupTime: number; // seconds
+  windupTime: number;
   damage: number;
   description: string;
   rangeType: 'cone' | 'circle' | 'line' | 'full_arena';
@@ -65,11 +70,13 @@ export interface Boss {
   title: string;
   hp: number;
   maxHp: number;
-  phase2Threshold: number; // e.g. 0.50 (50%)
+  posture: number; // Souls posture
+  maxPosture: number;
+  phase2Threshold: number; // 0.50 (50%)
   phase: 1 | 2;
   x: number;
   y: number;
-  currentAction: 'idle' | 'windup' | 'attacking' | 'cutscene' | 'staggered';
+  currentAction: 'idle' | 'windup' | 'attacking' | 'cutscene' | 'staggered' | 'fatality';
   currentAttack: QueuedAttack | null;
   actionTimer: number;
   poise: number;
@@ -86,7 +93,7 @@ export interface GlitchIncident {
   title: string;
   description: string;
   costMana: number;
-  timeLimit: number; // seconds before exploit succeeds
+  timeLimit: number;
   timeRemaining: number;
   x: number;
   y: number;
@@ -140,7 +147,7 @@ export interface Telegraph {
   y: number;
   radius: number;
   angle?: number;
-  progress: number; // 0 to 1
+  progress: number;
   color: string;
 }
 
@@ -176,7 +183,7 @@ export interface EncounterConfig {
     dps: number;
     chatFrequency: number;
   }[];
-  glitchAggression: number; // 1 to 5
+  glitchAggression: number;
   description: string;
-  targetFightTime: number; // target seconds to maximize drama
+  targetFightTime: number;
 }

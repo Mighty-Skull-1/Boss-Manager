@@ -1,13 +1,30 @@
 # 🎮 Encounter Engineer: Don't Let Them Skip Phase 2
+### *Mortal Kombat × Elden Ring × GTA 5 Edition*
 
-> *"Everyone has played a game where you fight a massive, terrifying boss with multiple phases. But no one has played a game where you are the tech support / manager for that boss."*
+> *"Everyone has played a game where you fight a massive, terrifying boss with multiple phases. But no one has played a game where you are the tech support / manager for that boss — fused with Mortal Kombat combos, Elden Ring posture ripostes, and GTA 5 5-star wanted levels."*
 
 [![Deploy to GitHub Pages](https://github.com/Mighty-Skull-1/Boss-Manager/actions/workflows/deploy.yml/badge.svg)](https://github.com/Mighty-Skull-1/Boss-Manager/actions/workflows/deploy.yml)
 [![Live Demo](https://img.shields.io/badge/Play%20Online-GitHub%20Pages-brightgreen?style=for-the-badge&logo=github)](https://mighty-skull-1.github.io/Boss-Manager/)
 
 ---
 
-## 📖 The Premise
+## 🔥 The Grand Fusion: Kombat, Souls & GTA Mechanics
+
+### 🥊 1. Mortal Kombat Combat System
+- **Combo Counter & Announcer**: Chain melee slashes (`[LMB]`) to build your combo meter (*"8 HITS! BRUTALITY PACE!"*). Announcer calls out *"ROUND 1: FIGHT!"*, *"BURST DENIED!"*, and *"FATALITY!"*.
+- **Hit-Stop Impact Physics**: Every heavy blow causes a visceral frame-freeze crunch with blood and fiery sparks flying across the arena.
+- **[E] HOTFIX FATALITY / RIPOSTE**: When a speedrunner's posture is shattered, execute a screen-clearing, cinematic Fatality finisher dealing 9999 lethal damage!
+
+### 🗡️ 2. Elden Ring Souls-like Mechanics
+- **Posture & Poise Break**: Every enemy has a hidden posture gauge. Heavy Jump Slams (`[RMB]`) and combo hits break their posture, revealing a glowing orange critical reticle over their chest!
+- **[T] Target Lock-On**: Dynamic camera tracks and orbits your locked target with Souls-style tracking.
+- **[SPACE] Dodge Roll i-Frames**: Tumble through danger with invulnerability window trails.
+
+### 🚗 3. GTA 5 Open Roam & Mayhem
+- **★ ★ ★ ★ ★ 5-Star Wanted Level**: As you crush speedrunners and hotpatch exploits, your Speedrun Wanted Level climbs. At 4-5 stars, TAS AI Input-Bots and backup runners are dispatched to the raid arena with flashing sirens!
+- **GTA GPS Radar Mini-Map**: Dynamic circular radar in the bottom-left corner tracking player heading, speedrunners, and hazards in real time.
+- **[TAB / Q] Weapon & Ability Wheel**: Slow-motion radial wheel allowing instant switching between Greatsword Cleaves, Molten Slams, Lava Pillars, and Shockwaves.
+- **[G] In-Game Radio Station**: Cycle between *Los Santos Synthwave*, *Elden Gothic Choir*, and *Cyber Speedrun Drill* with on-screen popups!
 
 You are **Malakor**, Lead Encounter Engineer & Raid Technical Director in the Nether-Dev Division. 
 

@@ -1,4 +1,4 @@
-// Web Audio procedural sound synthesizer for Encounter Engineer
+// Web Audio procedural sound synthesizer for Encounter Engineer: Kombat / Souls / GTA Edition
 
 class SoundManager {
   private ctx: AudioContext | null = null;
@@ -6,10 +6,11 @@ class SoundManager {
   private bgmGain: GainNode | null = null;
   private isBgmPlaying: boolean = false;
   private currentBgmPhase: 1 | 2 | 0 = 0;
+  private currentRadioStation: number = 0; // 0: Synthwave, 1: Elden Gothic, 2: Cyber Drill
   private bgmInterval: number | null = null;
 
   constructor() {
-    // AudioContext will be initialized on first user interaction
+    // Initialized on first user click
   }
 
   private initContext() {
@@ -34,7 +35,6 @@ class SoundManager {
     return this.isMuted;
   }
 
-  // Play a simple frequency envelope
   private playTone(freq: number, type: OscillatorType, duration: number, volume: number = 0.1, freqSlide?: number) {
     if (this.isMuted) return;
     try {
@@ -59,83 +59,123 @@ class SoundManager {
       osc.start();
       osc.stop(this.ctx.currentTime + duration);
     } catch {
-      // Audio autoplay or web audio context error ignored gracefully
+      // Audio context catch
     }
   }
 
-  // SFX: Attack windup telegraph
+  // Mortal Kombat Heavy Hit-Stop Impact
+  public playHeavyImpact() {
+    this.playTone(85, 'sawtooth', 0.25, 0.25, 30);
+    setTimeout(() => this.playTone(45, 'triangle', 0.35, 0.3, 15), 50);
+  }
+
+  // Elden Ring Critical Riposte / Visceral Execution Stab
+  public playCriticalRiposte() {
+    this.playTone(440, 'triangle', 0.8, 0.3, 220); // High bell strike
+    setTimeout(() => this.playTone(110, 'sawtooth', 0.5, 0.35, 35), 150); // Flesh rend
+    setTimeout(() => this.playTone(55, 'triangle', 0.8, 0.4, 20), 250); // Deep bass resonance
+  }
+
+  // Mortal Kombat Announcer "FATALITY!"
+  public playAnnouncerFatality() {
+    const speechTones = [180, 150, 120, 90];
+    speechTones.forEach((freq, idx) => {
+      setTimeout(() => this.playTone(freq, 'sawtooth', 0.25, 0.25), idx * 120);
+    });
+  }
+
+  // Mortal Kombat Announcer "FIGHT!"
+  public playAnnouncerFight() {
+    this.playTone(150, 'sawtooth', 0.15, 0.2);
+    setTimeout(() => this.playTone(200, 'sawtooth', 0.3, 0.25, 80), 120);
+  }
+
+  // Elden Ring Posture Break Gong
+  public playPostureBreak() {
+    this.playTone(330, 'sine', 1.0, 0.3, 165);
+    setTimeout(() => this.playTone(660, 'sine', 0.6, 0.2, 330), 80);
+  }
+
+  // GTA 5 Wanted Star Siren Blip
+  public playWantedSirens() {
+    this.playTone(600, 'square', 0.15, 0.12);
+    setTimeout(() => this.playTone(850, 'square', 0.2, 0.12), 160);
+  }
+
+  // GTA "WASTED" Sub-Bass Boom
+  public playWasted() {
+    this.playTone(110, 'sine', 2.0, 0.4, 25);
+    setTimeout(() => this.playTone(55, 'triangle', 2.5, 0.4, 15), 400);
+  }
+
+  // Radio Station Next
+  public nextRadioStation(): string {
+    const stations = ['LOS SANTOS SYNTHWAVE', 'ELDEN GOTHIC CHOIR', 'SPEEDRUN CYBER DRILL'];
+    this.currentRadioStation = (this.currentRadioStation + 1) % stations.length;
+    this.playTone(700, 'sine', 0.08, 0.1);
+    setTimeout(() => this.playTone(1050, 'sine', 0.1, 0.12), 60);
+
+    if (this.isBgmPlaying) {
+      this.startBGM(this.currentBgmPhase as 1 | 2);
+    }
+
+    return stations[this.currentRadioStation];
+  }
+
+  public getCurrentStationName(): string {
+    const stations = ['LOS SANTOS SYNTHWAVE', 'ELDEN GOTHIC CHOIR', 'SPEEDRUN CYBER DRILL'];
+    return stations[this.currentRadioStation];
+  }
+
+  // Standard Attacks & FX
   public playTelegraph() {
     this.playTone(220, 'sine', 0.25, 0.08, 440);
   }
 
-  // SFX: Boss physical slam / slash
   public playBossAttack() {
     this.playTone(110, 'sawtooth', 0.4, 0.2, 40);
-    setTimeout(() => {
-      this.playTone(60, 'triangle', 0.3, 0.25, 20);
-    }, 100);
   }
 
-  // SFX: Glitch / Exploit detected alert
   public playGlitchAlert() {
     this.playTone(880, 'square', 0.1, 0.15);
     setTimeout(() => this.playTone(1200, 'square', 0.15, 0.15), 100);
   }
 
-  // SFX: Hotpatch successfully applied
   public playHotfixApplied() {
-    this.playTone(523.25, 'sine', 0.08, 0.15); // C5
-    setTimeout(() => this.playTone(659.25, 'sine', 0.08, 0.15), 60); // E5
-    setTimeout(() => this.playTone(783.99, 'sine', 0.12, 0.15), 120); // G5
-    setTimeout(() => this.playTone(1046.5, 'sine', 0.2, 0.2), 180); // C6
+    this.playTone(523.25, 'sine', 0.08, 0.15);
+    setTimeout(() => this.playTone(659.25, 'sine', 0.08, 0.15), 60);
+    setTimeout(() => this.playTone(783.99, 'sine', 0.12, 0.15), 120);
+    setTimeout(() => this.playTone(1046.5, 'sine', 0.2, 0.2), 180);
   }
 
-  // SFX: Speedrunner roll i-frame
   public playRunnerRoll() {
     this.playTone(300, 'sine', 0.15, 0.05, 150);
   }
 
-  // SFX: Speedrunner chugging potion
   public playPotionSip() {
     this.playTone(400, 'triangle', 0.08, 0.06, 600);
-    setTimeout(() => this.playTone(550, 'triangle', 0.08, 0.06, 800), 70);
   }
 
-  // SFX: Speedrunner downed / killed
   public playRunnerKilled() {
     this.playTone(400, 'sawtooth', 0.2, 0.12, 100);
   }
 
-  // SFX: Arena Trap placed (pillar, spike, lava)
   public playTrapPlaced() {
     this.playTone(180, 'sawtooth', 0.25, 0.12, 90);
   }
 
-  // SFX: The epic Phase 2 Cutscene trigger!
   public playPhase2Cutscene() {
     if (this.isMuted) return;
     this.initContext();
     if (!this.ctx) return;
 
-    // Thunderous explosion + ascending dramatic choir
-    const chord = [130.81, 196.0, 261.63, 311.13, 392.0]; // C minor epic
+    const chord = [130.81, 196.0, 261.63, 311.13, 392.0];
     chord.forEach((freq, idx) => {
-      setTimeout(() => {
-        this.playTone(freq, 'sawtooth', 1.5, 0.12, freq * 1.5);
-      }, idx * 100);
+      setTimeout(() => this.playTone(freq, 'sawtooth', 1.5, 0.12, freq * 1.5), idx * 100);
     });
-
-    setTimeout(() => {
-      this.playTone(65.41, 'triangle', 2.0, 0.3, 30); // Sub-bass boom
-    }, 500);
+    setTimeout(() => this.playTone(65.41, 'triangle', 2.0, 0.3, 30), 500);
   }
 
-  // SFX: Apocalypse Laser beam
-  public playLaser() {
-    this.playTone(800, 'sawtooth', 0.8, 0.15, 200);
-  }
-
-  // SFX: Victory / Speedrunners wiped
   public playVictory() {
     const notes = [523.25, 659.25, 783.99, 1046.5];
     notes.forEach((freq, idx) => {
@@ -143,13 +183,11 @@ class SoundManager {
     });
   }
 
-  // SFX: Skipped Phase 2 Defeat / Fired buzzer
   public playFiredBuzzer() {
-    this.playTone(150, 'sawtooth', 0.6, 0.25, 80);
-    setTimeout(() => this.playTone(110, 'sawtooth', 0.8, 0.3, 55), 300);
+    this.playWasted();
   }
 
-  // Procedural BGM engine
+  // Dynamic Radio Station BGM
   public startBGM(phase: 1 | 2) {
     if (this.currentBgmPhase === phase && this.isBgmPlaying) return;
     this.stopBGM();
@@ -161,28 +199,32 @@ class SoundManager {
     this.isBgmPlaying = true;
 
     let step = 0;
-    // Simple procedural arpeggiator / bass loop
-    const phase1Notes = [110, 130.81, 146.83, 164.81, 130.81, 110, 98, 110]; // A minor dungeon
-    const phase2Notes = [130.81, 155.56, 174.61, 196.0, 220, 261.63, 233.08, 196.0]; // Intense C minor Phrygian
+    // Station melodies
+    const synthNotes = [110, 130.81, 146.83, 164.81, 130.81, 110, 98, 110];
+    const eldenNotes = [82.41, 98, 110, 123.47, 98, 82.41, 73.42, 82.41]; // Deep E minor
+    const drillNotes = [146.83, 174.61, 196, 220, 261.63, 220, 196, 174.61];
 
-    const notes = phase === 1 ? phase1Notes : phase2Notes;
-    const tempo = phase === 1 ? 260 : 160; // ms per beat
+    const stationNotes = 
+      this.currentRadioStation === 1 ? eldenNotes :
+      this.currentRadioStation === 2 ? drillNotes : synthNotes;
+
+    const tempo = phase === 1 ? 240 : 150;
 
     this.bgmInterval = window.setInterval(() => {
       if (!this.isBgmPlaying || this.isMuted) return;
-      const noteFreq = notes[step % notes.length];
-      
+      const noteFreq = stationNotes[step % stationNotes.length];
+
       // Bass line
-      this.playTone(noteFreq / 2, phase === 1 ? 'triangle' : 'sawtooth', 0.2, phase === 1 ? 0.04 : 0.06);
+      this.playTone(noteFreq / 2, phase === 1 ? 'triangle' : 'sawtooth', 0.2, phase === 1 ? 0.04 : 0.07);
 
       // Lead melody pulse
       if (step % 2 === 0) {
         this.playTone(noteFreq * (phase === 1 ? 1 : 1.5), 'sine', 0.15, phase === 1 ? 0.03 : 0.05);
       }
 
-      // Phase 2 hi-hat/snare synthetic noise
-      if (phase === 2 && step % 4 === 2) {
-        this.playTone(350, 'square', 0.06, 0.03, 100);
+      // Snare / Hi-hat
+      if (step % 4 === 2) {
+        this.playTone(320, 'square', 0.06, 0.03, 90);
       }
 
       step++;

@@ -35,6 +35,10 @@ export interface GameSimulationState {
   attackQueue: QueuedAttack[];
   bossAttackCooldowns: Record<string, number>;
   trapCooldowns: Record<string, number>;
+  wantedStars: number; // GTA Wanted Level (1 to 5 Stars)
+  comboCount: number; // Mortal Kombat Combo Counter
+  comboTimer: number;
+  announcerBanner?: string; // e.g. "FATALITY!", "BURST DENIED!", "FIGHT!"
 }
 
 // Distance helper
@@ -106,6 +110,9 @@ export function createInitialSimulation(
       vy: 0,
       hp: t.hp,
       maxHp: t.hp,
+      posture: 100,
+      maxPosture: 100,
+      isPostureBroken: false,
       dps: t.dps,
       isAlive: true,
       isStunned: false,
@@ -141,10 +148,17 @@ export function createInitialSimulation(
       actionTimer: 1.5,
       poise: 100,
       maxPoise: 100,
+      posture: 100,
+      maxPosture: 100,
       isInvulnerable: false,
       phase2Triggered: false,
     },
-    runners,
+    runners: runners.map(r => ({
+      ...r,
+      posture: 100,
+      maxPosture: 100,
+      isPostureBroken: false,
+    })),
     devMana: 100,
     maxDevMana: 100,
     dramaticTension: 40,
@@ -173,6 +187,10 @@ export function createInitialSimulation(
     attackQueue: [],
     bossAttackCooldowns: {},
     trapCooldowns: {},
+    wantedStars: 1,
+    comboCount: 0,
+    comboTimer: 0,
+    announcerBanner: 'ROUND 1: FIGHT!',
   };
 }
 
@@ -924,6 +942,141 @@ export function finishPhase2Cutscene(state: GameSimulationState): GameSimulation
   newState.boss.actionTimer = 1.0;
   
   soundManager.startBGM(2);
+
+  return newState;
+}
+
+// Mortal Kombat / Elden Ring: Melee Combo Hit
+export function performMeleeComboHit(state: GameSimulationState): GameSimulationState {
+  const newState = { ...state };
+  const { boss } = newState;
+
+  // Find nearest speedrunner
+  let nearestRunner: Speedrunner | null = null;
+  let minDist = 90; // Melee reach
+
+  for (const runner of newState.runners) {
+    if (!runner.isAlive) continue;
+    const d = dist(boss.x, boss.y, runner.x, runner.y);
+    if (d < minDist) {
+      minDist = d;
+      nearestRunner = runner;
+    }
+  }
+
+  if (nearestRunner) {
+    // Crunch sound
+    soundManager.playHeavyImpact();
+
+    // Damage & Posture Damage
+    const hitDamage = Math.round(25 + Math.random() * 15);
+    nearestRunner.hp = Math.max(0, nearestRunner.hp - hitDamage);
+    nearestRunner.posture = Math.max(0, nearestRunner.posture - 28);
+
+    // Knockback
+    const angle = Math.atan2(nearestRunner.y - boss.y, nearestRunner.x - boss.x);
+    nearestRunner.vx = Math.cos(angle) * 160;
+    nearestRunner.vy = Math.sin(angle) * 160;
+
+    // Increment combo
+    newState.comboCount = (newState.comboCount || 0) + 1;
+    newState.comboTimer = 2.5;
+
+    // Check wanted stars
+    if (newState.comboCount >= 8) newState.wantedStars = Math.min(5, Math.max(newState.wantedStars, 4));
+    else if (newState.comboCount >= 4) newState.wantedStars = Math.min(5, Math.max(newState.wantedStars, 3));
+    else if (newState.comboCount >= 2) newState.wantedStars = Math.min(5, Math.max(newState.wantedStars, 2));
+
+    // Blood / Spark Particles
+    createExplosionParticles(newState, nearestRunner.x, nearestRunner.y, 45, '#ef4444');
+    createExplosionParticles(newState, nearestRunner.x, nearestRunner.y, 30, '#f59e0b');
+
+    // Pop damage number with Mortal Kombat font vibe
+    newState.damageNumbers.push({
+      x: nearestRunner.x,
+      y: nearestRunner.y - 25,
+      value: `${hitDamage} DMG! [${newState.comboCount}x COMBO]`,
+      color: '#fbbf24',
+      life: 0.8,
+      isCrit: true,
+    });
+
+    // Check Posture Break (Elden Ring)
+    if (nearestRunner.posture <= 0 && !nearestRunner.isPostureBroken) {
+      nearestRunner.isPostureBroken = true;
+      nearestRunner.isStunned = true;
+      nearestRunner.stunTimer = 4.0;
+      soundManager.playPostureBreak();
+
+      newState.damageNumbers.push({
+        x: nearestRunner.x,
+        y: nearestRunner.y - 45,
+        value: 'POSTURE BROKEN! [PRESS E TO EXECUTE]',
+        color: '#f43f5e',
+        life: 2.5,
+        isCrit: true,
+      });
+    }
+
+    if (nearestRunner.hp <= 0) {
+      nearestRunner.isAlive = false;
+      soundManager.playRunnerKilled();
+      newState.damageNumbers.push({
+        x: nearestRunner.x,
+        y: nearestRunner.y - 40,
+        value: 'FATALITY!',
+        color: '#ef4444',
+        life: 1.8,
+      });
+    }
+  }
+
+  return newState;
+}
+
+// Elden Ring Visceral Riposte / Mortal Kombat FATALITY Finisher
+export function executeVisceralRiposte(state: GameSimulationState): GameSimulationState {
+  const newState = { ...state };
+  const { boss } = newState;
+
+  // Find nearest posture broken runner
+  const brokenRunner = newState.runners.find(
+    r => r.isAlive && r.isPostureBroken && dist(boss.x, boss.y, r.x, r.y) < 120
+  );
+
+  if (brokenRunner) {
+    brokenRunner.hp = 0;
+    brokenRunner.isAlive = false;
+    brokenRunner.isPostureBroken = false;
+
+    soundManager.playCriticalRiposte();
+    soundManager.playAnnouncerFatality();
+
+    newState.devMana = Math.min(newState.maxDevMana, newState.devMana + 35);
+    newState.dramaticTension = Math.min(100, newState.dramaticTension + 20);
+    newState.comboCount += 5;
+    newState.announcerBanner = 'FATALITY! EXPLOITER TERMINATED!';
+
+    // Screen-clearing explosion particles
+    createExplosionParticles(newState, brokenRunner.x, brokenRunner.y, 100, '#dc2626');
+    createExplosionParticles(newState, brokenRunner.x, brokenRunner.y, 80, '#facc15');
+
+    newState.damageNumbers.push({
+      x: brokenRunner.x,
+      y: brokenRunner.y - 40,
+      value: 'HOTFIX FATALITY! 9999 DMG',
+      color: '#dc2626',
+      life: 2.5,
+      isCrit: true,
+    });
+
+    newState.chatMessages.push({
+      id: `chat_fatality_${Date.now()}`,
+      user: 'TwitchChat_Andy',
+      text: 'HE HIT THE FATALITY ON MAIN STAGE POGGGGG',
+      color: '#ec4899',
+    });
+  }
 
   return newState;
 }

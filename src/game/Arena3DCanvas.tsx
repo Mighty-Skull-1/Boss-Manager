@@ -3,11 +3,13 @@ import * as THREE from 'three';
 import type { GameSimulationState } from './simulationEngine';
 import type { BossAttack } from '../types/game';
 import { BOSS_ATTACKS } from './encounters';
+import { soundManager } from '../audio/soundManager';
 import { 
   Footprints, 
-  Sparkles, 
   Zap, 
-  Compass
+  Radio, 
+  Flame, 
+  Star 
 } from 'lucide-react';
 
 interface Arena3DCanvasProps {
@@ -18,9 +20,10 @@ interface Arena3DCanvasProps {
   onTriggerPhase2?: () => void;
   onDeployHotfix?: (incidentId: string) => void;
   onUpdateBossPos?: (x: number, y: number) => void;
+  onMeleeComboHit?: () => void;
+  onExecuteRiposte?: () => void;
 }
 
-// Coordinate mapping: 2D simulation space (x: 100..700, y: 100..500) <-> 3D space (-21..21, -14..14)
 function to3D(x: number, y: number): { x: number; z: number } {
   return {
     x: (x - 400) * 0.07,
@@ -43,41 +46,98 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
   onTriggerPhase2,
   onDeployHotfix,
   onUpdateBossPos,
+  onMeleeComboHit,
+  onExecuteRiposte,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const radarCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef(simulationState);
 
   useEffect(() => {
     stateRef.current = simulationState;
   }, [simulationState]);
 
-  // Player Roaming & Avatar State
+  // Mode States
   const [avatarMode, setAvatarMode] = useState<'boss' | 'engineer'>('boss');
   const [cameraMode, setCameraMode] = useState<'third_person' | 'tactical' | 'cinematic' | 'orbit'>('third_person');
+  const [isLockedOn, setIsLockedOn] = useState(false);
+  const [lockedTargetId, setLockedTargetId] = useState<string | null>(null);
+  const [showWeaponWheel, setShowWeaponWheel] = useState(false);
+  const [currentStationName, setCurrentStationName] = useState('LOS SANTOS SYNTHWAVE');
+  const [showStationBanner, setShowStationBanner] = useState(false);
 
   // Input keys tracking
   const keysPressed = useRef<Record<string, boolean>>({});
 
-  // 3D Player Physics / Position
-  const playerPos = useRef<{ x: number; y: number; z: number; vy: number; isGrounded: boolean; rotation: number }>({
+  // 3D Player Physics
+  const playerPos = useRef<{ 
+    x: number; 
+    y: number; 
+    z: number; 
+    vx: number; 
+    vz: number; 
+    vy: number; 
+    isGrounded: boolean; 
+    rotation: number;
+    hitStopFrames: number;
+    attackComboStep: number;
+    attackCooldown: number;
+  }>({
     x: 0,
     y: 0,
     z: 0,
+    vx: 0,
+    vz: 0,
     vy: 0,
     isGrounded: true,
     rotation: 0,
+    hitStopFrames: 0,
+    attackComboStep: 0,
+    attackCooldown: 0,
   });
 
   // Handle keyboard inputs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Avoid intercepting if user is typing elsewhere
       if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
 
       keysPressed.current[e.code] = true;
 
-      // Hotkeys for attacks when roaming
+      // GTA Weapon Wheel hold (Tab / Q)
+      if (e.code === 'Tab' || e.code === 'KeyQ') {
+        e.preventDefault();
+        setShowWeaponWheel(true);
+      }
+
+      // Elden Ring Lock-On toggle (T)
+      if (e.code === 'KeyT') {
+        setIsLockedOn(prev => {
+          if (!prev) {
+            const living = stateRef.current.runners.find(r => r.isAlive);
+            if (living) setLockedTargetId(living.id);
+            return true;
+          } else {
+            setLockedTargetId(null);
+            return false;
+          }
+        });
+      }
+
+      // Elden Ring Visceral Riposte / Mortal Kombat Fatality Execution (E / F)
+      if (e.code === 'KeyE' || e.code === 'KeyF') {
+        if (onExecuteRiposte) onExecuteRiposte();
+      }
+
+      // GTA Radio Station switch (G)
+      if (e.code === 'KeyG') {
+        const nextStation = soundManager.nextRadioStation();
+        setCurrentStationName(nextStation);
+        setShowStationBanner(true);
+        setTimeout(() => setShowStationBanner(false), 2200);
+      }
+
+      // Hotkeys for attacks
       if (e.code === 'Digit1') {
         const atk = BOSS_ATTACKS.find(a => a.id === 'flame_cleave');
         if (atk && onQueueAttack) onQueueAttack(atk);
@@ -93,20 +153,21 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       } else if (e.code === 'KeyR') {
         if (onTriggerPhase2) onTriggerPhase2();
       } else if (e.code === 'KeyC') {
-        // Toggle camera
         setCameraMode(prev => 
           prev === 'third_person' ? 'tactical' :
           prev === 'tactical' ? 'cinematic' :
           prev === 'cinematic' ? 'orbit' : 'third_person'
         );
       } else if (e.code === 'KeyV') {
-        // Toggle avatar
         setAvatarMode(prev => prev === 'boss' ? 'engineer' : 'boss');
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       keysPressed.current[e.code] = false;
+      if (e.code === 'Tab' || e.code === 'KeyQ') {
+        setShowWeaponWheel(false);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -116,7 +177,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [onQueueAttack, onTriggerPhase2]);
+  }, [onQueueAttack, onTriggerPhase2, onExecuteRiposte]);
 
   // Main Three.js Scene Setup & Render Loop
   useEffect(() => {
@@ -124,19 +185,19 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    // 1. Scene
+    // 1. Scene & Atmosphere
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x060814);
-    scene.fog = new THREE.FogExp2(0x060814, 0.016);
+    scene.background = new THREE.Color(0x050711);
+    scene.fog = new THREE.FogExp2(0x050711, 0.015);
 
     // 2. Camera
     const width = container.clientWidth || 800;
     const height = 640;
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 200);
+    const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 200);
     camera.position.set(0, 24, 28);
     camera.lookAt(0, 0, 0);
 
-    // 3. Renderer
+    // 3. WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -147,14 +208,14 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    renderer.toneMappingExposure = 1.3;
 
     // 4. Lighting
-    const ambientLight = new THREE.AmbientLight(0x28203f, 1.3);
+    const ambientLight = new THREE.AmbientLight(0x2d1f42, 1.4);
     scene.add(ambientLight);
 
-    const mainSun = new THREE.DirectionalLight(0xfff0dd, 1.8);
-    mainSun.position.set(20, 40, 25);
+    const mainSun = new THREE.DirectionalLight(0xfff0dd, 2.0);
+    mainSun.position.set(22, 42, 26);
     mainSun.castShadow = true;
     mainSun.shadow.mapSize.width = 1024;
     mainSun.shadow.mapSize.height = 1024;
@@ -167,11 +228,11 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     scene.add(mainSun);
 
     // Boss Core PointLight
-    const bossLight = new THREE.PointLight(0xff5500, 3.5, 22);
+    const bossLight = new THREE.PointLight(0xff5500, 3.8, 24);
     bossLight.position.set(0, 3, 0);
     scene.add(bossLight);
 
-    // 4 Corner Torch Lights
+    // Torches
     const brazierPositions = [
       [-16, 4, -14],
       [16, 4, -14],
@@ -179,16 +240,16 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       [16, 4, 14],
     ];
     brazierPositions.forEach(([bx, by, bz]) => {
-      const bLight = new THREE.PointLight(0xff7700, 1.5, 18);
+      const bLight = new THREE.PointLight(0xff7700, 1.6, 20);
       bLight.position.set(bx, by, bz);
       scene.add(bLight);
     });
 
-    // 5. Build Arena Platform
+    // 5. Arena Environment
     const arenaGroup = new THREE.Group();
     scene.add(arenaGroup);
 
-    // Platform Octagon
+    // Octagonal Stone Platform
     const platformGeo = new THREE.CylinderGeometry(21, 22, 2.2, 8);
     const platformMat = new THREE.MeshStandardMaterial({
       color: 0x111625,
@@ -200,13 +261,13 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     platform.receiveShadow = true;
     arenaGroup.add(platform);
 
-    // Glowing Runic Circles
+    // Runic Rings
     const runeRingGeo = new THREE.RingGeometry(8, 8.4, 32);
     const runeRingMat = new THREE.MeshBasicMaterial({
       color: 0xf97316,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.7,
     });
     const runeRing = new THREE.Mesh(runeRingGeo, runeRingMat);
     runeRing.rotation.x = -Math.PI / 2;
@@ -218,14 +279,14 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       color: 0xf43f5e,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.5,
     });
     const outerRuneRing = new THREE.Mesh(outerRuneRingGeo, outerRuneRingMat);
     outerRuneRing.rotation.x = -Math.PI / 2;
     outerRuneRing.position.y = 0.02;
     arenaGroup.add(outerRuneRing);
 
-    // Outer Lava Abyss
+    // Lava Abyss
     const lavaGeo = new THREE.PlaneGeometry(130, 130, 16, 16);
     const lavaMat = new THREE.MeshStandardMaterial({
       color: 0xaa1100,
@@ -238,13 +299,11 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     lava.position.y = -2.6;
     scene.add(lava);
 
-    // 8 Gothic Dark Stone Pillars with Flames
-    const pillarPositions: THREE.Vector3[] = [];
+    // 8 Pillars
     for (let i = 0; i < 8; i++) {
       const angle = (i * Math.PI * 2) / 8;
       const px = Math.cos(angle) * 20.2;
       const pz = Math.sin(angle) * 20.2;
-      pillarPositions.push(new THREE.Vector3(px, 0, pz));
 
       const pGeo = new THREE.CylinderGeometry(1.1, 1.4, 8, 6);
       const pMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
@@ -261,7 +320,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       arenaGroup.add(flame);
     }
 
-    // 6. 3D Procedural Boss Model (Lord Ignis)
+    // 6. Boss 3D Model (Lord Ignis)
     const bossGroup = new THREE.Group();
     scene.add(bossGroup);
 
@@ -312,7 +371,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     visor.position.set(0, 5.8, 0.9);
     bossGroup.add(visor);
 
-    // Greatsword
+    // Flaming Greatsword
     const swordGroup = new THREE.Group();
     const bladeGeo = new THREE.BoxGeometry(0.65, 7.0, 0.25);
     const bladeMat = new THREE.MeshStandardMaterial({
@@ -337,7 +396,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     swordGroup.rotation.z = -0.3;
     bossGroup.add(swordGroup);
 
-    // Phase 2 Flaming Wings
+    // Flaming Wings
     const wingGroup = new THREE.Group();
     wingGroup.visible = false;
     bossGroup.add(wingGroup);
@@ -366,52 +425,10 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     rightWing.rotation.y = 0.3;
     wingGroup.add(rightWing);
 
-    // 7. 3D Procedural Encounter Engineer Avatar ("Malakor")
-    const engineerGroup = new THREE.Group();
-    engineerGroup.visible = false;
-    scene.add(engineerGroup);
-
-    // Hazmat Tech Body
-    const engBodyGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8, 8);
-    const engBodyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5 });
-    const engBody = new THREE.Mesh(engBodyGeo, engBodyMat);
-    engBody.position.y = 1.0;
-    engBody.castShadow = true;
-    engineerGroup.add(engBody);
-
-    // Tech Helmet / Goggles
-    const engHeadGeo = new THREE.SphereGeometry(0.4, 12, 12);
-    const engHeadMat = new THREE.MeshStandardMaterial({ color: 0xfacc15 });
-    const engHead = new THREE.Mesh(engHeadGeo, engHeadMat);
-    engHead.position.y = 2.1;
-    engineerGroup.add(engHead);
-
-    const goggleGeo = new THREE.BoxGeometry(0.5, 0.18, 0.2);
-    const goggleMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-    const goggles = new THREE.Mesh(goggleGeo, goggleMat);
-    goggles.position.set(0, 2.1, 0.38);
-    engineerGroup.add(goggles);
-
-    // Glowing Tech Wrench / Debug Staff
-    const wrenchGroup = new THREE.Group();
-    const wrenchHandleGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.2);
-    const wrenchHandleMat = new THREE.MeshStandardMaterial({ color: 0x64748b });
-    const wrenchHandle = new THREE.Mesh(wrenchHandleGeo, wrenchHandleMat);
-    wrenchGroup.add(wrenchHandle);
-
-    const wrenchHeadGeo = new THREE.TorusGeometry(0.25, 0.08, 8, 16, Math.PI * 1.5);
-    const wrenchHeadMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-    const wrenchHead = new THREE.Mesh(wrenchHeadGeo, wrenchHeadMat);
-    wrenchHead.position.y = 1.1;
-    wrenchGroup.add(wrenchHead);
-
-    wrenchGroup.position.set(0.7, 1.1, 0.3);
-    wrenchGroup.rotation.x = 0.5;
-    engineerGroup.add(wrenchGroup);
-
-    // 8. Speedrunner 3D Models
+    // 7. Speedrunner 3D Models
     const runnerMeshes = new Map<string, THREE.Group>();
     const runnerGlitches = new Map<string, THREE.Mesh>();
+    const runnerReticles = new Map<string, THREE.Mesh>();
 
     const createRunnerModel = (className: string, colorHex: number) => {
       const g = new THREE.Group();
@@ -460,10 +477,18 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         g.add(shield);
       }
 
-      return g;
+      // Elden Ring Posture Break Critical Dot
+      const rDotGeo = new THREE.RingGeometry(0.4, 0.55, 16);
+      const rDotMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide });
+      const rDot = new THREE.Mesh(rDotGeo, rDotMat);
+      rDot.position.set(0, 1.2, 0.6);
+      rDot.visible = false;
+      g.add(rDot);
+
+      return { group: g, reticle: rDot };
     };
 
-    // 9. Telegraphs & Laser
+    // 8. Telegraph & Laser FX
     const telegraphMesh = new THREE.Mesh(
       new THREE.RingGeometry(0.1, 10, 32),
       new THREE.MeshBasicMaterial({
@@ -487,10 +512,10 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     laserMesh.visible = false;
     scene.add(laserMesh);
 
-    // Traps Map
+    // Traps
     const trapMeshes = new Map<string, THREE.Object3D>();
 
-    // Embers Particle System
+    // Embers
     const particleCount = 200;
     const particleGeo = new THREE.BufferGeometry();
     const particlePos = new Float32Array(particleCount * 3);
@@ -509,7 +534,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     const embers = new THREE.Points(particleGeo, particleMat);
     scene.add(embers);
 
-    // Mouse / Raycaster Controls
+    // Mouse / Raycaster
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isMouseDown = false;
@@ -540,6 +565,14 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       prevMouseY = e.clientY;
 
       if (e.button === 0) {
+        // Left Click: Melee Attack Combo Chain!
+        if (onMeleeComboHit) {
+          onMeleeComboHit();
+          playerPos.current.attackComboStep = (playerPos.current.attackComboStep + 1) % 3;
+          playerPos.current.attackCooldown = 0.35;
+        }
+
+        // Raycast against floor
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObject(platform);
         if (intersects.length > 0) {
@@ -556,6 +589,14 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
             }
           }
         }
+      } else if (e.button === 2) {
+        // Right Click: Charged Jump Slam (Elden Ring style Heavy)
+        const atk = BOSS_ATTACKS.find(a => a.id === 'inferno_slam');
+        if (atk && onQueueAttack) {
+          onQueueAttack(atk);
+          playerPos.current.vy = 8.0;
+          playerPos.current.isGrounded = false;
+        }
       }
     };
 
@@ -565,6 +606,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
 
     canvas.addEventListener('mousemove', handlePointerMove);
     canvas.addEventListener('mousedown', handlePointerDown);
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('mouseup', handlePointerUp);
 
     // Resize
@@ -578,7 +620,7 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // 10. Core Animation Loop with Physics & Roaming
+    // Animation Loop
     let animId: number;
     let clock = 0;
 
@@ -588,9 +630,15 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       const isPhase2 = sim.boss.phase === 2;
       const keys = keysPressed.current;
 
-      // ==========================================
-      // A. PLAYER WASD ROAMING MOVEMENT & PHYSICS
-      // ==========================================
+      // Mortal Kombat Hit-Stop Effect (frame freeze on crunch)
+      if (playerPos.current.hitStopFrames > 0) {
+        playerPos.current.hitStopFrames--;
+        renderer.render(scene, camera);
+        animId = requestAnimationFrame(render);
+        return;
+      }
+
+      // WASD Movement Physics
       const p = playerPos.current;
       let moveX = 0;
       let moveZ = 0;
@@ -602,10 +650,9 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
 
       const isMoving = moveX !== 0 || moveZ !== 0;
       const isSprinting = !!keys['ShiftLeft'] || !!keys['ShiftRight'];
-      const speed = (isSprinting ? 14 : 9) * 0.016;
+      const speed = (isSprinting ? 15 : 9.5) * 0.016;
 
       if (isMoving) {
-        // Normalize movement vector
         const mag = Math.hypot(moveX, moveZ);
         const dirX = (moveX / mag) * speed;
         const dirZ = (moveZ / mag) * speed;
@@ -613,19 +660,18 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         p.x += dirX;
         p.z += dirZ;
 
-        // Smooth rotation towards movement direction
         const targetRot = Math.atan2(dirX, dirZ);
-        p.rotation = THREE.MathUtils.lerp(p.rotation, targetRot, 0.2);
+        p.rotation = THREE.MathUtils.lerp(p.rotation, targetRot, 0.22);
       }
 
       // Jump / Gravity
       if (keys['Space'] && p.isGrounded) {
-        p.vy = 6.5;
+        p.vy = 7.0;
         p.isGrounded = false;
       }
 
       if (!p.isGrounded) {
-        p.vy -= 18 * 0.016; // gravity
+        p.vy -= 20 * 0.016;
         p.y += p.vy * 0.016;
         if (p.y <= 0) {
           p.y = 0;
@@ -634,97 +680,87 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         }
       }
 
-      // Arena boundary clamp (keep inside octagonal platform ~ 19.5 radius)
+      // Arena boundary clamp
       const distFromCenter = Math.hypot(p.x, p.z);
-      if (distFromCenter > 19.0) {
+      if (distFromCenter > 19.2) {
         const clampAngle = Math.atan2(p.z, p.x);
-        p.x = Math.cos(clampAngle) * 19.0;
-        p.z = Math.sin(clampAngle) * 19.0;
+        p.x = Math.cos(clampAngle) * 19.2;
+        p.z = Math.sin(clampAngle) * 19.2;
       }
 
-      // Sync roamed player position to Boss or Engineer in simulation
-      if (avatarMode === 'boss') {
+      // Sync position to simulation
+      if (avatarMode === 'boss' && onUpdateBossPos) {
         const sim2D = to2D(p.x, p.z);
-        if (onUpdateBossPos) {
-          onUpdateBossPos(sim2D.x, sim2D.y);
-        }
+        onUpdateBossPos(sim2D.x, sim2D.y);
       }
 
-      // ==========================================
-      // B. CAMERA POSITIONING & BEHAVIORS
-      // ==========================================
+      // Camera Positioning
       if (sim.phase === 'phase2_transition') {
-        // Dramatic close-up cutscene shot!
-        const cutsceneCamTarget = new THREE.Vector3(p.x, p.y + 4, p.z + 9);
+        const cutsceneCamTarget = new THREE.Vector3(p.x, p.y + 4.5, p.z + 10);
         camera.position.lerp(cutsceneCamTarget, 0.05);
-        camera.lookAt(p.x, p.y + 3.5, p.z);
+        camera.lookAt(p.x, p.y + 4.0, p.z);
+      } else if (isLockedOn && lockedTargetId) {
+        // Elden Ring Lock-On Target Camera Tracking
+        const targetRunner = sim.runners.find(r => r.id === lockedTargetId && r.isAlive);
+        if (targetRunner) {
+          const tPos = to3D(targetRunner.x, targetRunner.y);
+          const midX = (p.x + tPos.x) / 2;
+          const midZ = (p.z + tPos.z) / 2;
+          const camTargetX = p.x - Math.sin(p.rotation) * 12;
+          const camTargetZ = p.z - Math.cos(p.rotation) * 12;
+          camera.position.lerp(new THREE.Vector3(camTargetX, p.y + 8, camTargetZ), 0.1);
+          camera.lookAt(midX, p.y + 2, midZ);
+        } else {
+          setIsLockedOn(false);
+        }
       } else if (cameraMode === 'third_person') {
-        // Over-the-shoulder action chase camera following your character!
-        const camDistance = avatarMode === 'boss' ? 14 : 9;
-        const camHeight = avatarMode === 'boss' ? 9 : 5.5;
-
-        // Position camera behind player rotation
+        // Action Third-Person Follow Camera
+        const camDistance = 14;
+        const camHeight = 8.5;
         const camTargetX = p.x - Math.sin(p.rotation) * camDistance;
         const camTargetZ = p.z - Math.cos(p.rotation) * camDistance;
         const camTargetY = p.y + camHeight;
 
-        camera.position.lerp(new THREE.Vector3(camTargetX, camTargetY, camTargetZ), 0.1);
+        camera.position.lerp(new THREE.Vector3(camTargetX, camTargetY, camTargetZ), 0.12);
         camera.lookAt(p.x, p.y + 2.5, p.z);
       } else if (cameraMode === 'tactical') {
-        // Elevated isometric commander view looking at player
         const tacticalPos = new THREE.Vector3(p.x, 26, p.z + 24);
         camera.position.lerp(tacticalPos, 0.05);
         camera.lookAt(p.x, 1, p.z);
       } else if (cameraMode === 'cinematic') {
-        // Sweeping orbit around the active combat
         const camX = p.x + Math.sin(clock * 0.4) * 22;
         const camZ = p.z + Math.cos(clock * 0.4) * 22;
         camera.position.lerp(new THREE.Vector3(camX, 15, camZ), 0.05);
         camera.lookAt(p.x, 2.5, p.z);
       }
 
-      // ==========================================
-      // C. RENDER AVATARS (BOSS & ENGINEER)
-      // ==========================================
-      // 1. Boss Model
-      if (avatarMode === 'boss') {
-        bossGroup.position.set(p.x, p.y, p.z);
-        bossGroup.rotation.y = p.rotation;
-        engineerGroup.visible = false;
-      } else {
-        // If controlling Engineer, Boss runs on sim AI, Engineer takes player pos
-        const bPos = to3D(sim.boss.x, sim.boss.y);
-        bossGroup.position.set(bPos.x, 0, bPos.z);
-        bossGroup.rotation.y = Math.sin(clock) * 0.2;
+      // Boss Model & Greatsword Swing Attack Animation
+      bossGroup.position.set(p.x, p.y, p.z);
+      bossGroup.rotation.y = p.rotation;
 
-        engineerGroup.visible = true;
-        engineerGroup.position.set(p.x, p.y, p.z);
-        engineerGroup.rotation.y = p.rotation;
-      }
-
-      // Boss Combat Animations & Greatsword
-      if (sim.boss.currentAction === 'windup') {
+      if (p.attackCooldown > 0) {
+        p.attackCooldown -= 0.016;
+        // Mortal Kombat Melee Swing Arc
+        swordGroup.rotation.x = -1.2 + Math.sin(clock * 35) * 0.8;
+        swordGroup.rotation.y = Math.sin(clock * 30) * 1.5;
+        swordGroup.position.y = 1.2;
+      } else if (sim.boss.currentAction === 'windup') {
         swordGroup.rotation.x = 2.4 + Math.sin(clock * 30) * 0.18;
         swordGroup.position.y = 4.4;
-        torso.rotation.x = -0.2;
       } else if (sim.boss.currentAction === 'attacking') {
         swordGroup.rotation.x = -0.8;
         swordGroup.position.y = 1.0;
-        torso.rotation.x = 0.35;
-      } else if (sim.boss.currentAction === 'staggered') {
-        torso.rotation.x = -0.4;
-        bossGroup.rotation.z = Math.sin(clock * 20) * 0.15;
       } else {
         torso.position.y = 3.4 + Math.sin(clock * 3) * 0.1;
         swordGroup.rotation.x = 0.4 + (isMoving ? Math.sin(clock * 12) * 0.2 : 0);
+        swordGroup.rotation.y = 0;
         swordGroup.position.y = 2.6;
-        bossGroup.rotation.z = 0;
       }
 
-      // Phase 2 Wings & Floating
+      // Phase 2 Wings
       if (isPhase2) {
         wingGroup.visible = true;
-        if (p.isGrounded && avatarMode === 'boss') {
+        if (p.isGrounded) {
           bossGroup.position.y = p.y + 1.2 + Math.sin(clock * 4) * 0.3;
         }
         leftWing.rotation.z = Math.sin(clock * 6) * 0.25;
@@ -733,56 +769,57 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         wingGroup.visible = false;
       }
 
-      // ==========================================
-      // D. SPEEDRUNNERS DYNAMIC REACTIVE AI
-      // ==========================================
+      // Speedrunners Update & Reticles
       sim.runners.forEach(runner => {
-        let rGroup = runnerMeshes.get(runner.id);
-        if (!rGroup) {
+        let entry = runnerMeshes.get(runner.id);
+        if (!entry) {
           const colorHex =
             runner.className === 'rogue' ? 0x10b981 :
             runner.className === 'mage' ? 0x8b5cf6 :
             runner.className === 'tank' ? 0x3b82f6 : 0xf59e0b;
-          rGroup = createRunnerModel(runner.className, colorHex);
-          scene.add(rGroup);
-          runnerMeshes.set(runner.id, rGroup);
+          const created = createRunnerModel(runner.className, colorHex);
+          scene.add(created.group);
+          runnerMeshes.set(runner.id, created.group);
+          runnerReticles.set(runner.id, created.reticle);
 
           const wfGeo = new THREE.BoxGeometry(1.6, 2.8, 1.6);
           const wfMat = new THREE.MeshBasicMaterial({ color: 0xe11d48, wireframe: true });
           const wfMesh = new THREE.Mesh(wfGeo, wfMat);
           wfMesh.visible = false;
-          rGroup.add(wfMesh);
+          created.group.add(wfMesh);
           runnerGlitches.set(runner.id, wfMesh);
+          entry = created.group;
         }
 
         if (!runner.isAlive) {
-          rGroup.rotation.z = Math.PI / 2;
-          rGroup.position.y = 0.2;
+          entry.rotation.z = Math.PI / 2;
+          entry.position.y = 0.2;
           return;
         }
 
         const rPos = to3D(runner.x, runner.y);
-        rGroup.position.x = rPos.x;
-        rGroup.position.z = rPos.z;
+        entry.position.x = rPos.x;
+        entry.position.z = rPos.z;
 
-        // Reactive facing towards Boss or Engineer
         const angle = Math.atan2(p.x - rPos.x, p.z - rPos.z);
-        rGroup.rotation.y = angle;
+        entry.rotation.y = angle;
 
-        // Reactive Panic Dodge Roll if player roams too close!
-        const distToPlayer = Math.hypot(p.x - rPos.x, p.z - rPos.z);
-        if (distToPlayer < 5.0 && !runner.isRolling && Math.random() < 0.04) {
-          runner.isRolling = true;
-          runner.rollTimer = 0.4;
+        // Elden Ring Posture Break Critical Dot
+        const reticle = runnerReticles.get(runner.id);
+        if (reticle) {
+          reticle.visible = runner.isPostureBroken;
+          if (reticle.visible) {
+            reticle.rotation.z += 0.08;
+          }
         }
 
         // 3D Roll tumbling
         if (runner.isRolling) {
-          rGroup.rotation.x += 0.45;
-          rGroup.position.y = 0.6 + Math.sin(clock * 20) * 0.4;
+          entry.rotation.x += 0.45;
+          entry.position.y = 0.6 + Math.sin(clock * 20) * 0.4;
         } else {
-          rGroup.rotation.x = 0;
-          rGroup.position.y = Math.sin(clock * 10 + parseInt(runner.id.slice(-1))) * 0.12;
+          entry.rotation.x = 0;
+          entry.position.y = Math.sin(clock * 10 + parseInt(runner.id.slice(-1))) * 0.12;
         }
 
         // Glitch Indicator Box
@@ -795,15 +832,13 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         }
       });
 
-      // Update 3D Telegraphs & Laser
+      // Update Telegraphs
       if (sim.telegraphs.length > 0) {
         const tele = sim.telegraphs[0];
         telegraphMesh.visible = true;
         telegraphMesh.position.set(p.x, 0.05, p.z);
-        const teleRadius3D = tele.radius * 0.07;
-
         telegraphMesh.geometry.dispose();
-        telegraphMesh.geometry = new THREE.RingGeometry(0.1, teleRadius3D, 32);
+        telegraphMesh.geometry = new THREE.RingGeometry(0.1, tele.radius * 0.07, 32);
 
         const tMat = telegraphMesh.material as THREE.MeshBasicMaterial;
         tMat.color.set(isPhase2 ? 0xec4899 : 0xef4444);
@@ -859,6 +894,70 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
         }
       });
 
+      // ==========================================
+      // GTA 5 MINI-MAP RADAR CANVAS DRAWING
+      // ==========================================
+      const radar = radarCanvasRef.current;
+      if (radar) {
+        const rctx = radar.getContext('2d');
+        if (rctx) {
+          const rw = radar.width;
+          const rh = radar.height;
+          const rcx = rw / 2;
+          const rcy = rh / 2;
+          const radarRadius = rw / 2 - 4;
+
+          // Clear & Dark radar base
+          rctx.clearRect(0, 0, rw, rh);
+          rctx.fillStyle = 'rgba(8, 12, 22, 0.85)';
+          rctx.beginPath();
+          rctx.arc(rcx, rcy, radarRadius, 0, Math.PI * 2);
+          rctx.fill();
+          rctx.strokeStyle = '#38bdf8';
+          rctx.lineWidth = 2.5;
+          rctx.stroke();
+
+          // Radar grid rings
+          rctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+          rctx.lineWidth = 1;
+          [0.35, 0.7].forEach(ratio => {
+            rctx.beginPath();
+            rctx.arc(rcx, rcy, radarRadius * ratio, 0, Math.PI * 2);
+            rctx.stroke();
+          });
+
+          // Draw Speedrunner Blips on Radar
+          const radarScale = radarRadius / 22; // 22 is arena world radius
+          sim.runners.forEach(runner => {
+            if (!runner.isAlive) return;
+            const r3D = to3D(runner.x, runner.y);
+            const bx = rcx + (r3D.x - p.x) * radarScale;
+            const by = rcy + (r3D.z - p.z) * radarScale;
+
+            if (Math.hypot(bx - rcx, by - rcy) <= radarRadius - 2) {
+              rctx.fillStyle = runner.isPostureBroken ? '#f59e0b' : runner.color;
+              rctx.beginPath();
+              rctx.arc(bx, by, 4, 0, Math.PI * 2);
+              rctx.fill();
+            }
+          });
+
+          // Draw Player Icon at center (GTA arrow triangle)
+          rctx.save();
+          rctx.translate(rcx, rcy);
+          rctx.rotate(-p.rotation);
+          rctx.fillStyle = '#ef4444';
+          rctx.beginPath();
+          rctx.moveTo(0, -7);
+          rctx.lineTo(5, 6);
+          rctx.lineTo(0, 3);
+          rctx.lineTo(-5, 6);
+          rctx.closePath();
+          rctx.fill();
+          rctx.restore();
+        }
+      }
+
       renderer.render(scene, camera);
       animId = requestAnimationFrame(render);
     };
@@ -873,184 +972,185 @@ export const Arena3DCanvas: React.FC<Arena3DCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
     };
-  }, [onCanvasClick, cameraMode, avatarMode, onUpdateBossPos]);
+  }, [onCanvasClick, cameraMode, avatarMode, onUpdateBossPos, onMeleeComboHit, onDeployHotfix, onQueueAttack, isLockedOn, lockedTargetId]);
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700 bg-slate-950"
+      className="relative w-full rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700 bg-slate-950 select-none"
     >
       <canvas
         ref={canvasRef}
-        className="w-full h-[640px] block select-none cursor-crosshair focus:outline-none"
+        className="w-full h-[640px] block cursor-crosshair focus:outline-none"
         tabIndex={0}
       />
 
-      {/* TOP CONTROLS & CAMERA BAR */}
-      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-        {/* Avatar Mode Pill */}
-        <div className="flex items-center gap-2 bg-slate-950/90 border border-slate-700/80 p-1.5 rounded-xl backdrop-blur-md pointer-events-auto shadow-lg text-xs font-mono">
-          <span className="text-slate-400 text-[10px] font-bold uppercase pl-1.5">CONTROL AVATAR:</span>
-          <button
-            onClick={() => setAvatarMode('boss')}
-            className={`px-3 py-1 rounded-lg transition font-bold flex items-center gap-1.5 cursor-pointer ${
-              avatarMode === 'boss'
-                ? 'bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            LORD IGNIS (BOSS)
-          </button>
-          <button
-            onClick={() => setAvatarMode('engineer')}
-            className={`px-3 py-1 rounded-lg transition font-bold flex items-center gap-1.5 cursor-pointer ${
-              avatarMode === 'engineer'
-                ? 'bg-sky-600 text-white shadow'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            MALAKOR (DEV)
-          </button>
+      {/* TOP HEADER: MORTAL KOMBAT COMBO + GTA WANTED STARS */}
+      <div className="absolute top-3 left-3 right-3 flex items-start justify-between pointer-events-none">
+        {/* Mortal Kombat Combo Counter */}
+        <div className="flex flex-col gap-1 pointer-events-auto">
+          {simulationState.comboCount > 0 ? (
+            <div className="p-2.5 rounded-xl bg-black/85 border border-amber-500/70 shadow-2xl backdrop-blur-md animate-bounce">
+              <div className="text-2xl font-black italic tracking-wider text-amber-400 drop-shadow-[0_0_10px_#f59e0b]">
+                {simulationState.comboCount} HITS!
+              </div>
+              <div className="text-[10px] font-mono uppercase font-black text-rose-500 tracking-widest">
+                {simulationState.comboCount >= 8 ? '★ BRUTALITY PACE! ★' : simulationState.comboCount >= 4 ? 'COMBO BREAKER!' : 'KOMBAT STRIKE'}
+              </div>
+            </div>
+          ) : (
+            <div className="px-3 py-1 rounded-lg bg-black/70 border border-slate-800 text-[10px] font-mono text-slate-400">
+              LMB: MELEE COMBO • RMB: HEAVY SLAM
+            </div>
+          )}
         </div>
 
-        {/* Camera Selector */}
-        <div className="flex items-center gap-1 bg-slate-950/90 border border-slate-700/80 p-1.5 rounded-xl backdrop-blur-md pointer-events-auto shadow-lg text-xs font-mono">
-          <span className="text-slate-400 text-[10px] font-bold uppercase px-1 flex items-center gap-1">
-            <Compass className="w-3.5 h-3.5" />
-            CAM:
+        {/* Mortal Kombat Center Announcer Banner */}
+        {simulationState.announcerBanner && (
+          <div className="absolute left-1/2 -translate-x-1/2 top-4 pointer-events-none">
+            <h1 className="text-3xl md:text-4xl font-black italic tracking-widest uppercase bg-gradient-to-r from-amber-400 via-rose-500 to-amber-400 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(244,63,94,0.8)] animate-pulse">
+              {simulationState.announcerBanner}
+            </h1>
+          </div>
+        )}
+
+        {/* GTA 5 Wanted Level Stars (1 to 5 Stars) */}
+        <div className="flex flex-col items-end gap-1 pointer-events-auto">
+          <div className="flex items-center gap-1 bg-black/85 border border-slate-700 px-3 py-1.5 rounded-xl backdrop-blur-md shadow-2xl">
+            <span className="text-[10px] font-mono font-bold text-slate-300 mr-1">WANTED:</span>
+            {[1, 2, 3, 4, 5].map(star => (
+              <Star
+                key={star}
+                className={`w-4 h-4 ${
+                  star <= simulationState.wantedStars
+                    ? 'text-amber-400 fill-amber-400 animate-pulse'
+                    : 'text-slate-600'
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-[9px] font-mono text-rose-400">
+            {simulationState.wantedStars >= 4 ? 'TAS BOTS SUMMONED!' : 'SPEEDRUN RAID PATROL'}
           </span>
-          <button
-            onClick={() => setCameraMode('third_person')}
-            className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              cameraMode === 'third_person'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            3rd Person
-          </button>
-          <button
-            onClick={() => setCameraMode('tactical')}
-            className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              cameraMode === 'tactical'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Tactical
-          </button>
-          <button
-            onClick={() => setCameraMode('cinematic')}
-            className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              cameraMode === 'cinematic'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Cinematic
-          </button>
-          <button
-            onClick={() => setCameraMode('orbit')}
-            className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-              cameraMode === 'orbit'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Free Orbit
-          </button>
         </div>
+      </div>
+
+      {/* GTA 5 RADIO STATION POPUP BANNER */}
+      {showStationBanner && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/90 border border-amber-500 px-6 py-2 rounded-xl text-center shadow-2xl backdrop-blur-md animate-fade-in pointer-events-none z-30">
+          <div className="flex items-center justify-center gap-2 text-xs font-mono font-bold text-amber-400 uppercase tracking-widest">
+            <Radio className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span>RADIO: {currentStationName}</span>
+          </div>
+        </div>
+      )}
+
+      {/* GTA 5 WEAPON & ABILITY WHEEL OVERLAY (HOLD TAB / Q) */}
+      {showWeaponWheel && (
+        <div className="absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-center justify-center pointer-events-auto">
+          <div className="relative w-80 h-80 rounded-full border-4 border-amber-500/80 bg-slate-950/90 shadow-[0_0_50px_rgba(245,158,11,0.5)] flex items-center justify-center p-6 text-center">
+            <div className="flex flex-col items-center">
+              <Flame className="w-10 h-10 text-amber-400 animate-bounce mb-2" />
+              <div className="text-sm font-black text-white uppercase tracking-wider">
+                WEAPON / ABILITY WHEEL
+              </div>
+              <div className="text-[10px] font-mono text-slate-400 mt-1">
+                Release key to select • Press 1-4 for quickfire
+              </div>
+            </div>
+
+            {/* Quick Wheel Segments */}
+            {BOSS_ATTACKS.slice(0, 4).map((atk, idx) => {
+              const angle = (idx / 4) * Math.PI * 2;
+              const wx = Math.cos(angle) * 110;
+              const wy = Math.sin(angle) * 110;
+              return (
+                <button
+                  key={atk.id}
+                  onClick={() => {
+                    if (onQueueAttack) onQueueAttack(atk);
+                    setShowWeaponWheel(false);
+                  }}
+                  className="absolute p-2.5 rounded-xl bg-slate-900 border border-amber-500 text-xs font-mono font-bold text-white hover:bg-amber-600 transition shadow-lg -translate-x-1/2 -translate-y-1/2 cursor-pointer"
+                  style={{ left: `calc(50% + ${wx}px)`, top: `calc(50% + ${wy}px)` }}
+                >
+                  [{idx + 1}] {atk.name.split(' ')[0]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* BOTTOM-LEFT: GTA 5 CIRCULAR GPS RADAR */}
+      <div className="absolute bottom-3 left-3 pointer-events-auto flex items-end gap-3 z-20">
+        <div className="relative w-28 h-28 rounded-full shadow-2xl border border-sky-400/60 overflow-hidden bg-slate-950">
+          <canvas ref={radarCanvasRef} width={112} height={112} className="w-full h-full block" />
+          <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[8px] font-mono font-black text-sky-400">
+            GPS
+          </div>
+        </div>
+
+        {/* Roam & Kombat Controls Bar */}
+        <div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl backdrop-blur-md text-[10px] font-mono text-slate-300 shadow-xl flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+            <Footprints className="w-3.5 h-3.5 text-emerald-400" />
+            <span>KOMBAT / SOULS CONTROLS:</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-300">
+            <span className="font-bold text-white">[WASD]</span> Move •{' '}
+            <span className="font-bold text-white">[LMB]</span> Combo Slash •{' '}
+            <span className="font-bold text-white">[RMB]</span> Heavy Slam •{' '}
+            <span className="font-bold text-white">[SPACE]</span> Dodge Roll
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <span className="text-amber-400 font-bold">[E]</span> Visceral Execution •{' '}
+            <span className="text-amber-400 font-bold">[TAB]</span> Weapon Wheel •{' '}
+            <span className="text-amber-400 font-bold">[G]</span> Radio
+          </div>
+        </div>
+      </div>
+
+      {/* BOTTOM-RIGHT: ELDEN RING POSTURE RIPOSTE & ABILITIES */}
+      <div className="absolute bottom-3 right-3 pointer-events-auto flex items-center gap-2 z-20">
+        {/* Elden Ring Visceral Execution Action Button */}
+        {simulationState.runners.some(r => r.isAlive && r.isPostureBroken) && (
+          <button
+            onClick={() => onExecuteRiposte && onExecuteRiposte()}
+            className="px-4 py-3 rounded-xl bg-gradient-to-r from-red-600 via-amber-600 to-red-600 text-white font-black text-xs font-mono uppercase tracking-widest border-2 border-amber-400 shadow-[0_0_25px_rgba(244,63,94,0.8)] animate-bounce cursor-pointer flex items-center gap-2"
+          >
+            <Zap className="w-4 h-4 text-amber-300" />
+            [E] HOTFIX FATALITY RIPOSTE!
+          </button>
+        )}
+
+        {/* Phase 2 Transition Button */}
+        <button
+          onClick={() => onTriggerPhase2 && onTriggerPhase2()}
+          disabled={simulationState.boss.phase2Triggered || (simulationState.boss.hp / simulationState.boss.maxHp) > 0.65}
+          className={`px-4 py-3 rounded-xl border text-left flex flex-col justify-between transition relative overflow-hidden ${
+            simulationState.boss.phase2Triggered
+              ? 'bg-fuchsia-950 border-fuchsia-600 text-fuchsia-300 opacity-80 cursor-default'
+              : (simulationState.boss.hp / simulationState.boss.maxHp) <= 0.65
+              ? 'bg-gradient-to-br from-rose-600 to-pink-600 hover:from-rose-500 text-white border-pink-400 shadow-lg shadow-pink-900/40 animate-pulse cursor-pointer'
+              : 'bg-slate-900/60 border-slate-800 text-slate-500 opacity-60 cursor-not-allowed'
+          }`}
+        >
+          <div className="flex items-center justify-between w-full">
+            <span className="font-mono text-[10px] font-bold text-pink-200">[R]</span>
+            <span className="font-mono text-[9px] text-white">TRANSITION</span>
+          </div>
+          <div className="text-[10px] font-black truncate leading-tight">PHASE 2 CUTSCENE</div>
+        </button>
       </div>
 
       {/* Selected Trap Alert */}
       {selectedTrap && (
-        <div className="absolute top-16 left-3 bg-sky-950/90 text-sky-200 border border-sky-400 px-3 py-1.5 rounded-lg text-xs font-mono backdrop-blur-sm pointer-events-none flex items-center gap-2 shadow-lg animate-pulse">
+        <div className="absolute top-16 left-3 bg-sky-950/90 text-sky-200 border border-sky-400 px-3 py-1.5 rounded-lg text-xs font-mono backdrop-blur-sm pointer-events-none flex items-center gap-2 shadow-lg animate-pulse z-30">
           <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
           CLICK ANYWHERE ON 3D ARENA TO PLACE: {selectedTrap.toUpperCase().replace('_', ' ')}
         </div>
       )}
-
-      {/* BOTTOM ROAMING & ABILITY HOTBAR HUD */}
-      <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between pointer-events-none">
-        {/* Keyboard Roaming Instructions */}
-        <div className="bg-slate-950/90 border border-slate-800 p-2.5 rounded-xl backdrop-blur-md text-xs font-mono text-slate-300 pointer-events-auto shadow-xl flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <Footprints className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="font-bold text-amber-300">ROAM CONTROLS:</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">W</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">A</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">S</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">D</span>
-            <span className="text-slate-400 mr-2">Move</span>
-
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">SHIFT</span>
-            <span className="text-slate-400 mr-2">Sprint</span>
-
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">SPACE</span>
-            <span className="text-slate-400 mr-2">Jump</span>
-
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">C</span>
-            <span className="text-slate-400 mr-2">Cam</span>
-
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-bold">V</span>
-            <span className="text-slate-400">Avatar</span>
-          </div>
-        </div>
-
-        {/* Quick Action Ability Hotbar */}
-        <div className="bg-slate-950/90 border border-slate-800 p-2 rounded-xl backdrop-blur-md pointer-events-auto shadow-xl flex items-center gap-1.5">
-          {BOSS_ATTACKS.slice(0, 4).map((atk, idx) => {
-            const isPhaseLocked = atk.phaseRequired > simulationState.boss.phase;
-            const cd = simulationState.bossAttackCooldowns[atk.id] || 0;
-            const canAfford = simulationState.devMana >= atk.manaCost;
-
-            return (
-              <button
-                key={atk.id}
-                onClick={() => onQueueAttack && onQueueAttack(atk)}
-                disabled={isPhaseLocked || cd > 0 || !canAfford}
-                className={`p-2 rounded-lg border text-left flex flex-col justify-between w-24 h-16 transition cursor-pointer relative overflow-hidden ${
-                  isPhaseLocked || cd > 0 || !canAfford
-                    ? 'bg-slate-900/60 border-slate-800 opacity-60 cursor-not-allowed'
-                    : 'bg-gradient-to-t from-slate-900 to-slate-800 hover:border-amber-500 border-slate-700 text-white shadow-md'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <span className="font-mono text-[10px] font-bold text-amber-400">[{idx + 1}]</span>
-                  <span className="font-mono text-[9px] text-sky-400">{atk.manaCost}MP</span>
-                </div>
-                <div className="text-[10px] font-bold truncate leading-tight">{atk.name}</div>
-                {cd > 0 && (
-                  <div className="text-[9px] font-mono text-rose-400 font-bold">{cd.toFixed(1)}s</div>
-                )}
-              </button>
-            );
-          })}
-
-          {/* SACRED PHASE 2 HOTKEY BUTTON */}
-          <button
-            onClick={() => onTriggerPhase2 && onTriggerPhase2()}
-            disabled={simulationState.boss.phase2Triggered || (simulationState.boss.hp / simulationState.boss.maxHp) > 0.65}
-            className={`p-2 rounded-lg border text-left flex flex-col justify-between w-28 h-16 transition relative overflow-hidden ${
-              simulationState.boss.phase2Triggered
-                ? 'bg-fuchsia-950 border-fuchsia-600 text-fuchsia-300 opacity-80 cursor-default'
-                : (simulationState.boss.hp / simulationState.boss.maxHp) <= 0.65
-                ? 'bg-gradient-to-br from-rose-600 to-pink-600 hover:from-rose-500 text-white border-pink-400 shadow-lg shadow-pink-900/40 animate-pulse cursor-pointer'
-                : 'bg-slate-900/60 border-slate-800 text-slate-500 opacity-60 cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <span className="font-mono text-[10px] font-bold text-pink-200">[R]</span>
-              <span className="font-mono text-[9px] text-white">TRANSITION</span>
-            </div>
-            <div className="text-[10px] font-black truncate leading-tight">PHASE 2 CUTSCENE</div>
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
