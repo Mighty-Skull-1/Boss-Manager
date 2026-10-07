@@ -11,6 +11,7 @@ import {
 } from './game/simulationEngine';
 import { ENCOUNTERS } from './game/encounters';
 import type { BossAttack } from './types/game';
+import { Arena3DCanvas } from './game/Arena3DCanvas';
 import { ArenaCanvas } from './game/ArenaCanvas';
 import { ConsoleHeader } from './components/ConsoleHeader';
 import { ScriptSequencer } from './components/ScriptSequencer';
@@ -20,7 +21,7 @@ import { DarkLordComms } from './components/DarkLordComms';
 import { PhaseTransitionModal } from './components/PhaseTransitionModal';
 import { GameOverModal } from './components/GameOverModal';
 import { soundManager } from './audio/soundManager';
-import { Play, Flame, Layers } from 'lucide-react';
+import { Play, Flame, Layers, Box, Monitor } from 'lucide-react';
 
 export function App() {
   const [currentEncounterIndex, setCurrentEncounterIndex] = useState(0);
@@ -32,13 +33,16 @@ export function App() {
 
   const [isGameStarted, setIsGameStarted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [is3DView, setIs3DView] = useState(true);
   const [selectedTrap, setSelectedTrap] = useState<'lava_pool' | 'invisible_wall' | 'anti_roll_spikes' | null>(null);
 
   // References for requestAnimationFrame loop
   const stateRef = useRef<GameSimulationState>(simulationState);
-  stateRef.current = simulationState;
+  const lastTimeRef = useRef<number>(0);
 
-  const lastTimeRef = useRef<number>(performance.now());
+  useEffect(() => {
+    stateRef.current = simulationState;
+  }, [simulationState]);
 
   // Reset or switch encounter
   const loadEncounter = useCallback((index: number) => {
@@ -203,17 +207,66 @@ export function App() {
 
         {/* Center Grid: Arena Battlefield (Left) + Live Stream Chat (Right) */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
-          {/* Main 2D Arena Canvas (3 Columns) */}
+          {/* Main 3D / 2D Arena Canvas (3 Columns) */}
           <div className="lg:col-span-3 flex flex-col items-center">
-            <ArenaCanvas
-              simulationState={simulationState}
-              onCanvasClick={handleCanvasClick}
-              selectedTrap={selectedTrap}
-            />
+            <div className="flex items-center justify-between w-full mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Flame className="w-4 h-4 text-rose-500" />
+                  RAID ARENA CHAMBER
+                </span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
+                  is3DView
+                    ? 'bg-gradient-to-r from-rose-950 to-amber-950 text-amber-300 border-amber-600/60 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                    : 'bg-slate-900 text-slate-400 border-slate-700'
+                }`}>
+                  {is3DView ? '✨ 3D THREE.JS REALTIME' : '2D TACTICAL GRID'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+                <button
+                  onClick={() => setIs3DView(true)}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    is3DView
+                      ? 'bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  3D ARENA
+                </button>
+                <button
+                  onClick={() => setIs3DView(false)}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    !is3DView
+                      ? 'bg-slate-800 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  2D TACTICAL
+                </button>
+              </div>
+            </div>
+
+            {is3DView ? (
+              <Arena3DCanvas
+                simulationState={simulationState}
+                onCanvasClick={handleCanvasClick}
+                selectedTrap={selectedTrap}
+              />
+            ) : (
+              <ArenaCanvas
+                simulationState={simulationState}
+                onCanvasClick={handleCanvasClick}
+                selectedTrap={selectedTrap}
+              />
+            )}
           </div>
 
           {/* Twitch Live Stream Chat (1 Column) */}
-          <div className="lg:col-span-1 h-[600px]">
+          <div className="lg:col-span-1 h-[640px]">
             <TwitchChatPanel messages={simulationState.chatMessages} />
           </div>
         </div>
