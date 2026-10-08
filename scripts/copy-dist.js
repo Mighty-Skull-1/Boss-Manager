@@ -16,8 +16,15 @@ function copyDir(src, dest) {
   }
 }
 
-// Copy dist/assets to assets
+// 1. Copy dist/assets to assets/
 copyDir('dist/assets', 'assets');
-// Copy dist to docs
+
+// 2. Copy dist to docs/
 copyDir('dist', 'docs');
-console.log('Successfully synced dist to assets/ and docs/');
+
+// 3. Copy production dist/index.html to root index.html
+if (fs.existsSync('dist/index.html')) {
+  fs.copyFileSync('dist/index.html', 'index.html');
+}
+
+console.log('Successfully synced dist to root index.html, assets/ and docs/');

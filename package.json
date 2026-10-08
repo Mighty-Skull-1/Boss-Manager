@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/copy-dist.js",
+    "dev": "node scripts/prebuild.js && vite",
+    "build": "node scripts/prebuild.js && tsc -b && vite build && node scripts/copy-dist.js",
     "lint": "oxlint",
     "preview": "vite preview"
   },
